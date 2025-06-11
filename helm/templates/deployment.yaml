@@ -1,0 +1,43 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: psa-car-controller
+  labels:
+    app.kubernetes.io/name: psa-car-controller
+    app.kubernetes.io/instance: psa-car-controller
+    {{- include "..labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: psa-car-controller
+      app.kubernetes.io/instance: psa-car-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: psa-car-controller
+        app.kubernetes.io/instance: psa-car-controller
+        {{- include "..labels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsUser: 0
+      containers:
+      - name: psa-car-controller
+        image: flobz/psa_car_controller:latest
+        imagePullPolicy: Always
+        env:
+          - name: PSACC_PORT
+            value: '5000'
+        ports:
+          - name: http
+            containerPort: 5000
+            protocol: TCP
+        volumeMounts:
+          - name: psa-car-controller-volume
+            mountPath: /config-backup
+            subPath: config
+      volumes:
+      - name: psa-car-controller-volume
+        persistentVolumeClaim:
+          claimName: psa-car-controller-pvc

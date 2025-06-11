@@ -1,0 +1,19 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: psa-car-controller
+  labels:
+    app.kubernetes.io/name: psa-car-controller
+    app.kubernetes.io/instance: psa-car-controller
+    {{- include "..labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: psa-car-controller
+    app.kubernetes.io/instance: psa-car-controller

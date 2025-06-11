@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  annotations:
+    pv.kubernetes.io/provisioned-by: smb.csi.k8s.io
+  name: psa-car-controller-pv
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteMany
+  capacity:
+    storage: 2Gi
+  mountOptions:
+    - dir_mode=0777
+    - file_mode=0777
+  storageClassName: smb
+  persistentVolumeReclaimPolicy: Retain
+  csi:
+    driver: smb.csi.k8s.io
+    readOnly: false
+    volumeHandle: psa-car-controller-vol
+    volumeAttributes:
+      source: //192.168.1.11/Kubernetes/PSACarController
+    nodeStageSecretRef:
+      name: smb-credentials
+      namespace: kube-system
