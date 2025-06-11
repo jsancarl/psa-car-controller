@@ -24,7 +24,7 @@ spec:
         runAsUser: 0
       containers:
       - name: psa-car-controller
-        image: flobz/psa_car_controller:latest
+        image: docker.jorgesanchezcarlin.es:443/{{ .Chart.Name }}:{{ .Values.imageTag }}
         imagePullPolicy: Always
         env:
           - name: PSACC_PORT
@@ -35,7 +35,7 @@ spec:
             protocol: TCP
         volumeMounts:
           - name: psa-car-controller-volume
-            mountPath: /config-backup
+            mountPath: /config
             subPath: config
       volumes:
       - name: psa-car-controller-volume
