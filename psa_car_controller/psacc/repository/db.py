@@ -1,6 +1,5 @@
 import logging
-# import sqlite3  # Eliminado
-import mariadb
+import sqlite3
 from datetime import datetime
 from threading import Lock
 from time import sleep
@@ -36,34 +35,28 @@ def dict_key_to_lower_case(**kwargs) -> dict:
     return dict((k.lower(), v) for k, v in kwargs.items())
 
 
-class CustomMariaDBConnection:
-    def __init__(self, *args, **kwargs):
+class CustomSqliteConnection(sqlite3.Connection):
+
+    def __init__(self, *args, **kwargs):  # real signature unknown
+        super().__init__(*args, **kwargs)
         self.callbacks = []
-    def cursor(self, dictionary=False):
-        return self.conn.cursor(dictionary=dictionary)
-    def commit(self):
-        self.conn.commit()
-    def close(self):
-        if self.conn:
-            self.conn.close()
+
     def execute_callbacks(self):
         for callback in self.callbacks:
             callback()
-    @property
-    def is_connected(self):
-        return self.conn is not None and self.conn.open
+
+    def close(self):
+        if self.total_changes:
+            self.execute_callbacks()
+        self.rollback()
+        self.execute("PRAGMA optimize;")
+        self.commit()
+        super().close()
 
 
 class Database:
     callback_fct: Callable[[], None] = lambda: None
-    # Configuración de conexión MariaDB
-    DB_CONFIG = {
-        'host': 'localhost',
-        'user': 'root',
-        'password': 'password',
-        'database': 'psa_car_controller',
-        'autocommit': True
-    }
+    DEFAULT_DB_FILE = 'info.db'
     db_initialized = False
     __thread_lock = Lock()
 
@@ -85,50 +78,54 @@ class Database:
 
     @staticmethod
     def backup(conn):
-        # MariaDB: el backup se hace diferente, aquí solo placeholder
-        logger.info("Backup not implemented for MariaDB in this script.")
+        filename = f"info_backup_{datetime.now()}.db".replace(":", "_")
+        back_conn = sqlite3.connect(filename)
+        conn.backup(back_conn)
+        back_conn.close()
 
     @staticmethod
     def init_db(conn):
         new_db = True
         try:
-            cursor = conn.cursor()
-            cursor.execute("""CREATE TABLE IF NOT EXISTS position (Timestamp DATETIME PRIMARY KEY,
-                                                                     VIN VARCHAR(32), longitude DOUBLE,
-                                                                     latitude DOUBLE,
-                                                                     mileage DOUBLE,
-                                                                     level INT,
-                                                                     level_fuel INT,
-                                                                     moving BOOLEAN,
-                                                                     temperature INT,
-                                                                     altitude INT);""")
-        except mariadb.Error as e:
+            conn.execute("""CREATE TABLE position (Timestamp DATETIME PRIMARY KEY,
+                                                                 VIN TEXT, longitude REAL,
+                                                                 latitude REAL,
+                                                                 mileage REAL,
+                                                                 level INTEGER,
+                                                                 level_fuel INTEGER,
+                                                                 moving BOOLEAN,
+                                                                 temperature INTEGER,
+                                                                 altitude INTEGER);""")
+        except sqlite3.OperationalError:
             new_db = False
-            logger.debug(f"Database already exist or error: {e}")
+            logger.debug("Database already exist")
         make_backup = False
-        cursor.execute("""CREATE TABLE IF NOT EXISTS battery (start_at DATETIME PRIMARY KEY,stop_at DATETIME,VIN VARCHAR(32), 
-                         start_level INT, end_level INT, co2 INT, kw INT, price INT, charging_mode VARCHAR(32), mileage DOUBLE);""")
-        cursor.execute("""CREATE TABLE IF NOT EXISTS battery_curve (start_at DATETIME, VIN VARCHAR(32), date DATETIME,
-                        level INT, rate INT, autonomy INT, UNIQUE KEY unique_curve (start_at, VIN, level));""")
-        cursor.execute("""CREATE TABLE IF NOT EXISTS
-                        battery_soh(date DATETIME, VIN VARCHAR(32), level FLOAT, UNIQUE KEY unique_soh (VIN, level));""")
-        # ALTER TABLE para nuevas columnas
+        conn.execute("CREATE TABLE IF NOT EXISTS battery (start_at DATETIME PRIMARY KEY,stop_at DATETIME,VIN TEXT, "
+                     "start_level INTEGER, end_level INTEGER, co2 INTEGER, kw INTEGER);")
+        conn.execute("""CREATE TABLE IF NOT EXISTS battery_curve (start_at DATETIME, VIN TEXT, date DATETIME,
+                        level INTEGER, UNIQUE(start_at, VIN, level));""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS
+                        battery_soh(date DATETIME, VIN TEXT, level FLOAT, UNIQUE(VIN, level));""")
         table_to_update = [["position", NEW_POSITION_COLUMNS],
                            ["battery", NEW_BATTERY_COLUMNS],
                            ["battery_curve", NEW_BATTERY_CURVE_COLUMNS]]
         for table, columns in table_to_update:
             for column, column_type in columns:
                 try:
-                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type};")
+                    conn.execute(f"ALTER TABLE {table} ADD {column} {column_type};")
                     make_backup = True
-                except mariadb.Error:
+                except sqlite3.OperationalError:
                     pass
         if not new_db and make_backup:
             Database.backup(conn)
-        # Triggers y PRAGMA no aplican en MariaDB
+        conn.execute("DROP TRIGGER IF EXISTS update_trigger")
         Database.clean_battery(conn)
         Database.add_altitude_to_db(conn)
         conn.commit()
+        conn.execute("VACUUM;")
+        conn.commit()
+        sqlite3.register_converter("DATETIME", Database.convert_datetime_from_bytes)
+        sqlite3.register_adapter(datetime, Database.convert_datetime_to_string)
         Database.db_initialized = True
 
     @staticmethod
@@ -136,15 +133,16 @@ class Database:
         try:
             Database.get_db()
             return True
-        except mariadb.Error:
+        except sqlite3.OperationalError:
             logger.fatal("Can't access to db file check permission")
         return False
 
     @staticmethod
-    def get_db(db_config=None, update_callback=True) -> CustomMariaDBConnection:
-        if db_config is None:
-            db_config = Database.DB_CONFIG
-        conn = CustomMariaDBConnection(**db_config)
+    def get_db(db_file=None, update_callback=True) -> CustomSqliteConnection:
+        if db_file is None:
+            db_file = Database.DEFAULT_DB_FILE
+        conn = CustomSqliteConnection(db_file, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
+        conn.row_factory = sqlite3.Row
         with Database.__thread_lock:
             if not Database.db_initialized:
                 Database.init_db(conn)
@@ -154,28 +152,29 @@ class Database:
 
     @staticmethod
     def clean_battery(conn):
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM battery WHERE start_level >= end_level-1;")
-        conn.commit()
+        # delete charging longer than 17h
+        # conn.execute("DElETE FROM battery WHERE JULIANDAY(stop_at)-JULIANDAY(start_at)>0.7;")
+        # delete charging not finished longer than 17h
+        # conn.execute("DELETE from battery where stop_at is NULL and JULIANDAY()-JULIANDAY(start_at)>0.7;")
+        # delete little charge
+        conn.execute("DELETE FROM battery WHERE start_level >= end_level-1;")
 
     @staticmethod
     def clean_position(conn):
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT Timestamp,mileage,level from position ORDER BY Timestamp DESC LIMIT 3;")
-        res = cursor.fetchall()
+        res = conn.execute(
+            "SELECT Timestamp,mileage,level from position ORDER BY Timestamp DESC LIMIT 3;").fetchall()
+        # Clean DB
         if len(res) == 3 and res[0]["mileage"] == res[1]["mileage"] == res[2]["mileage"] and \
                 res[0]["level"] == res[1]["level"] == res[2]["level"]:
             logger.debug("Delete duplicate line")
-            cursor.execute("DELETE FROM position where Timestamp=%s;", (res[1]["Timestamp"],))
+            conn.execute("DELETE FROM position where Timestamp=?;", (res[1]["Timestamp"],))
             conn.commit()
 
     @staticmethod
     def get_last_temp(vin):
         conn = Database.get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT temperature FROM position WHERE VIN=%s ORDER BY Timestamp DESC limit 1", (vin,))
-        res = cursor.fetchone()
+        res = conn.execute("SELECT temperature FROM position WHERE VIN=? ORDER BY Timestamp DESC limit 1",
+                           (vin,)).fetchone()
         conn.close()
         if res is None:
             return None
@@ -183,24 +182,21 @@ class Database:
 
     @staticmethod
     def set_chargings_price(conn, charge: Charge):
-        cursor = conn.cursor()
-        update = cursor.execute("UPDATE battery SET price=%s WHERE start_at=%s AND VIN=%s",
-                              (charge.price, charge.start_at, charge.vin))
+        update = conn.execute("UPDATE battery SET price=? WHERE start_at=? AND VIN=?",
+                              (charge.price, charge.start_at, charge.vin)).rowcount
         conn.commit()
-        if cursor.rowcount == 0:
+        if update == 0:
             logger.error("Can't find line to update in the database")
-        return cursor.rowcount
+        return update
 
     @staticmethod
     def get_battery_curve(conn, start_at, stop_at, vin):
         battery_curves = []
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("""SELECT date, level, rate, autonomy
+        res = conn.execute("""SELECT date, level, rate, autonomy
                                                 FROM battery_curve
-                                                WHERE start_at=%s and date<=%s and VIN=%s
+                                                WHERE start_at=? and date<=? and VIN=?
                                                 ORDER BY date asc;""",
-                           (start_at, stop_at, vin))
-        res = cursor.fetchall()
+                           (start_at, stop_at, vin)).fetchall()
         for row in res:
             battery_curves.append(BatteryCurveDto(**dict_key_to_lower_case(**row)))
         return battery_curves
@@ -208,25 +204,22 @@ class Database:
     @staticmethod
     def add_altitude_to_db(conn):
         max_pos_by_req = 100
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(1) FROM position WHERE altitude IS NULL "
-                               "and longitude IS NOT NULL AND latitude IS NOT NULL;")
-        nb_null = cursor.fetchone()[0]
+        nb_null = conn.execute("SELECT COUNT(1) FROM position WHERE altitude IS NULL "
+                               "and longitude IS NOT NULL AND latitude IS NOT NULL;").fetchone()[0]
         if nb_null > max_pos_by_req:
             logger.warning("There is %s to fetch from API, it can take some time", nb_null)
         try:
             while True:
-                cursor.execute("SELECT DISTINCT latitude,longitude FROM position WHERE altitude IS NULL "
-                                   "and longitude IS NOT NULL AND latitude IS NOT NULL LIMIT %s;",
-                                   (max_pos_by_req,))
-                res = cursor.fetchall()
+                res = conn.execute("SELECT DISTINCT latitude,longitude FROM position WHERE altitude IS NULL "
+                                   "and longitude IS NOT NULL AND latitude IS NOT NULL LIMIT ?;",
+                                   (max_pos_by_req,)).fetchall()
                 nb_res = len(res)
                 if nb_res > 0:
                     logger.debug("add altitude for %s positions point", nb_null)
                     nb_null -= nb_res
                     data = utils.get_positions(res)
                     for line in data:
-                        cursor.execute("UPDATE position SET altitude=%s WHERE latitude=%s and longitude=%s",
+                        conn.execute("UPDATE position SET altitude=? WHERE latitude=? and longitude=?",
                                      (line["elevation"], line["location"]["lat"], line["location"]["lng"]))
                     conn.commit()
                     if nb_res == 100:
@@ -239,9 +232,7 @@ class Database:
     @staticmethod
     def get_recorded_position():
         conn = Database.get_db()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute('SELECT * FROM position ORDER BY Timestamp')
-        res = cursor.fetchall()
+        res = conn.execute('SELECT * FROM position ORDER BY Timestamp')
         features_list = []
         for row in res:
             if row["longitude"] is None or row["latitude"] is None:
@@ -255,30 +246,28 @@ class Database:
         conn.close()
         return geo_dumps(feature_collection, sort_keys=True)
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     @staticmethod
     def record_position(weather_api, vin, mileage, latitude, longitude, altitude, date, level, level_fuel, moving):
         if mileage == 0:  # fix a bug of the api
             logger.error("The api return a wrong mileage for %s : %f", vin, mileage)
         else:
             conn = Database.get_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT Timestamp from position where Timestamp=%s", (date,))
-            if cursor.fetchone() is None:
+            if conn.execute("SELECT Timestamp from position where Timestamp=?", (date,)).fetchone() is None:
                 temp = get_temp(latitude, longitude, weather_api)
                 if level_fuel and level_fuel == 0:  # fix fuel level not provided when car is off
                     try:
-                        cursor.execute(
-                            "SELECT level_fuel FROM position WHERE level_fuel>0 AND VIN=%s ORDER BY Timestamp DESC "
+                        level_fuel = conn.execute(
+                            "SELECT level_fuel FROM position WHERE level_fuel>0 AND VIN=? ORDER BY Timestamp DESC "
                             "LIMIT 1",
-                            (vin,))
-                        level_fuel = cursor.fetchone()[0]
+                            (vin,)).fetchone()[0]
                         logger.info("level_fuel fixed with last real value %f for %s", level_fuel, vin)
                     except TypeError:
                         level_fuel = None
                         logger.info("level_fuel unfixed for %s", vin)
 
-                cursor.execute("INSERT INTO position(Timestamp,VIN,longitude,latitude,altitude,mileage,level,level_fuel,"
-                             "moving,temperature) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                conn.execute("INSERT INTO position(Timestamp,VIN,longitude,latitude,altitude,mileage,level,level_fuel,"
+                             "moving,temperature) VALUES(?,?,?,?,?,?,?,?,?,?)",
                              (date, vin, longitude, latitude, altitude, mileage, level, level_fuel, moving, temp))
 
                 conn.commit()
@@ -293,17 +282,14 @@ class Database:
     @staticmethod
     def record_battery_soh(vin: str, date: datetime, level: float):
         conn = Database.get_db()
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO battery_soh(date, VIN, level) VALUES(%s,%s,%s)", (date, vin, level))
+        conn.execute("INSERT INTO battery_soh(date, VIN, level) VALUES(?,?,?)", (date, vin, level))
         conn.commit()
         conn.close()
 
     @staticmethod
     def get_soh_by_vin(vin) -> BatterySoh:
         conn = Database.get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT date, level FROM battery_soh WHERE  VIN=%s ORDER BY date", (vin,))
-        res = cursor.fetchall()
+        res = conn.execute("SELECT date, level FROM battery_soh WHERE  VIN=? ORDER BY date", (vin,)).fetchall()
         dates = []
         levels = []
         for row in res:
@@ -314,9 +300,7 @@ class Database:
     @staticmethod
     def get_last_soh_by_vin(vin) -> float:
         conn = Database.get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT level FROM battery_soh WHERE  VIN=%s ORDER BY date DESC LIMIT 1", (vin,))
-        res = cursor.fetchall()
+        res = conn.execute("SELECT level FROM battery_soh WHERE  VIN=? ORDER BY date DESC LIMIT 1", (vin,)).fetchall()
         if res:
             return res[0][0]
         return None
@@ -324,9 +308,7 @@ class Database:
     @staticmethod
     def get_last_charge(vin) -> Charge:
         conn = Database.get_db()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM battery WHERE VIN=%s ORDER BY start_at DESC limit 1", (vin,))
-        res = cursor.fetchone()
+        res = conn.execute("SELECT * FROM battery WHERE VIN=? ORDER BY start_at DESC limit 1", (vin,)).fetchone()
         if res:
             return Charge(**dict_key_to_lower_case(**res))
         return None
@@ -334,19 +316,15 @@ class Database:
     @staticmethod
     def get_charge(vin, start_at) -> Charge:
         conn = Database.get_db()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM battery WHERE VIN=%s AND START_AT=%s ORDER BY start_at DESC limit 1",
-                           (vin, start_at,))
-        res = cursor.fetchone()
+        res = conn.execute("SELECT * FROM battery WHERE VIN=? AND START_AT=? ORDER BY start_at DESC limit 1",
+                           (vin, start_at,)).fetchone()
         if res:
             return Charge(**dict_key_to_lower_case(**res))
         return None
 
     @staticmethod
     def get_all_charge_without_price(conn) -> List[Charge]:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM battery WHERE price IS NULL")
-        res = cursor.fetchall()
+        res = conn.execute("SELECT * FROM battery WHERE price IS NULL").fetchall()
         charges = []
         for row in res:
             charges.append(Charge(**dict_key_to_lower_case(**row)))
@@ -355,21 +333,20 @@ class Database:
     @staticmethod
     def get_all_charge() -> List[Charge]:
         conn = Database.get_db()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("select * from battery ORDER BY start_at")
-        res = cursor.fetchall()
+        res = conn.execute("select * from battery ORDER BY start_at").fetchall()
         conn.close()
         return res
 
     @staticmethod
     def update_charge(charge: Charge):
+        # we don't need to update mileage, since it should be inserted at beginning of charge,
+        # maybe in future this will be supported
         conn = Database.get_db()
-        cursor = conn.cursor()
-        res = cursor.execute(
-            "UPDATE battery set stop_at=%s, end_level=%s, co2=%s, kw=%s, price=%s WHERE start_at=%s and VIN=%s",
+        res = conn.execute(
+            "UPDATE battery set stop_at=?, end_level=?, co2=?, kw=?, price=? WHERE start_at=? and VIN=?",
             (charge.stop_at, charge.end_level, charge.co2, charge.kw, charge.price, charge.start_at,
-             charge.vin))
-        if cursor.rowcount == 0:
+             charge.vin)).rowcount
+        if res == 0:
             logger.error("Can't find battery row to update")
         conn.commit()
         conn.close()
