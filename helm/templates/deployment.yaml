@@ -37,6 +37,9 @@ spec:
           - name: psa-car-controller-volume
             mountPath: /backup
             subPath: backup
+          - name: psa-car-controller-volume
+            mountPath: /init.sh
+            subPath: init.sh
       volumes:
       - name: psa-car-controller-volume
         persistentVolumeClaim:
