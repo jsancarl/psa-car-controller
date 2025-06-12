@@ -35,8 +35,8 @@ spec:
             protocol: TCP
         volumeMounts:
           - name: psa-car-controller-volume
-            mountPath: /config
-            subPath: config
+            mountPath: /backup
+            subPath: backup
       volumes:
       - name: psa-car-controller-volume
         persistentVolumeClaim:
