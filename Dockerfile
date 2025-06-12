@@ -1,10 +1,10 @@
-ARG PYTHON_DEP='python3 python3-wheel python3-typing-extensions python3-pandas python3-six python3-dateutil python3-brotli python3-pycryptodome libatlas3-base python3-cryptography python3-scipy androguard python3-flask python3-paho-mqtt python3-ruamel.yaml ca-certificates python3-numpy'
+ARG PYTHON_DEP='python3 python3-wheel python3-typing-extensions python3-pandas python3-six python3-dateutil python3-brotli python3-pycryptodome libatlas3-base python3-cryptography python3-scipy androguard python3-flask python3-paho-mqtt python3-ruamel.yaml ca-certificates python3-numpy mariadb'
 ARG DEBIAN_FRONTEND=noninteractive
 FROM debian:bookworm-slim AS builder
 WORKDIR /home/jenkins/agent/workspace/Components/psa-car-controller
 ARG PSACC_VERSION="0.0.0"
 ARG PYTHON_DEP
-RUN  BUILD_DEP='python3-pip python3-setuptools python3-dev libblas-dev liblapack-dev gfortran libffi-dev libxml2-dev libxslt1-dev make automake gcc g++ subversion ninja-build' ; \
+RUN  BUILD_DEP='python3-pip python3-setuptools python3-dev libblas-dev liblapack-dev gfortran libffi-dev libxml2-dev libxslt1-dev make automake gcc g++ subversion ninja-build libmariadb-dev' ; \
      apt-get update && apt-get install -y --no-install-recommends $BUILD_DEP $PYTHON_DEP;
 RUN pip3 install --break-system-packages --upgrade pip build wheel setuptools poetry
 RUN poetry build
