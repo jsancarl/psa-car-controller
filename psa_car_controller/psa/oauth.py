@@ -74,6 +74,7 @@ class OpenIdCredentialManager(CredentialManager):
 
     @rate_limit(6, 1800)
     def refresh_token_now(self):
+        logger.error("Refreshing token...")
         try:
             self._refresh_token()
             for refresh_callback in self.refresh_callbacks:
