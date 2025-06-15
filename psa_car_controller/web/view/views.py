@@ -20,7 +20,6 @@ from psa_car_controller.psacc.application.charging import Charging
 from psa_car_controller.web import figures
 
 from psa_car_controller.web.app import dash_app
-from psa_car_controller.psacc.repository.db import Database
 from psa_car_controller.web.tools.utils import diff_dashtable, unix_time_millis, get_marks_from_start_end, create_card
 from psa_car_controller.web.view.config_oauth import get_oauth_config_layout
 from psa_car_controller.web.view.config_views import log_layout, config_layout
@@ -104,17 +103,6 @@ def create_callback():  # noqa: MC0001
             if timestamp is None:
                 raise PreventUpdate
             diff_data = diff_dashtable(data, data_previous, "start_at")
-            for changed_line in diff_data:
-                if changed_line['column_name'] == 'price':
-                    conn = Database.get_db()
-                    charge = Charge(datetime.utcfromtimestamp(changed_line['start_at'] / 1000))
-                    charge.price = changed_line['current_value']
-                    charge.vin = get_default_car().vin
-                    if not Database.set_chargings_price(conn, charge):
-                        logger.error("Can't find line to update in the database")
-                    else:
-                        logger.debug("update price %s of %s", changed_line['current_value'], changed_line['start_at'])
-                    conn.close()
             return ""  # don't need to update dashboard
 
         @dash_app.callback([Output("tab_battery_popup_graph", "children"), Output("tab_battery_popup", "is_open")],
@@ -176,51 +164,6 @@ def create_callback():  # noqa: MC0001
 
 
 def update_trips():
-    global trips, chargings, cached_layout, min_date, max_date, min_millis, max_millis, step, marks
-    logger.info("update_data")
-    conn = Database.get_db(update_callback=False)
-    Database.add_altitude_to_db(conn)
-    conn.close()
-    min_date = None
-    max_date = None
-    if APP.is_good:
-        car = get_default_car()  # todo handle multiple car
-        try:
-            trips_by_vin = Trips.get_trips(Cars([car]))
-            trips = trips_by_vin[car.vin]
-            assert len(trips) > 0
-            min_date = trips[0].start_at
-            max_date = trips[-1].start_at
-            figures.get_figures(trips[0].car)
-        except (AssertionError, KeyError):
-            logger.debug("No trips yet")
-            figures.get_figures(Car("vin", "vid", "brand"))
-        try:
-            chargings = Charging.get_chargings()
-            assert len(chargings) > 0
-            if min_date:
-                min_date = min(min_date, chargings[0]["start_at"])
-                max_date = max(max_date, chargings[-1]["start_at"])
-            else:
-                min_date = chargings[0]["start_at"]
-                max_date = chargings[-1]["start_at"]
-        except AssertionError:
-            logger.debug("No chargings yet")
-            if min_date is None:
-                return
-        # update for slider
-        try:
-            logger.debug("min_date:%s - max_date:%s", min_date, max_date)
-            min_millis = unix_time_millis(min_date)
-            max_millis = unix_time_millis(max_date)
-            step = (max_millis - min_millis) / 100
-            marks = get_marks_from_start_end(min_date, max_date)
-            cached_layout = None  # force regenerate layout
-            figures.get_figures(car)
-        except (ValueError, IndexError):
-            logger.error("update_trips (slider): %s", exc_info=True)
-        except AttributeError:
-            logger.debug("position table is probably empty :", exc_info=True)
     return
 
 

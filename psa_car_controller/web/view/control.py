@@ -5,7 +5,6 @@ import dash_bootstrap_components as dbc
 from dash import html
 
 from psa_car_controller.psacc.application.psa_client import PSAClient
-from psa_car_controller.psacc.repository.db import Database
 from psa_car_controller.web.tools.Button import Button
 from psa_car_controller.web.tools.Switch import Switch
 from psa_car_controller.web.tools.utils import card_value_div, create_card
@@ -45,13 +44,6 @@ def get_control_tabs(config):
                                                                          car.status.timed_odometer.mileage))],
                                              "src": "assets/images/mileage.svg"}
                                  })
-            soh = Database.get_last_soh_by_vin(car.vin)
-            if soh:
-                cards["Battery SOH"] = {"text": [card_value_div("battery_soh_value", "%",
-                                                                value=convert_value_to_str(
-                                                                    soh))],
-                                        "src": "assets/images/battery-soh.svg"}
-                cards.move_to_end("Mileage")
             el.append(dbc.Container(dbc.Row(children=create_card(cards)), fluid=True))
             if config.remote_control:
                 try:

@@ -5,7 +5,6 @@ from pydantic import BaseModel
 
 from psa_car_controller.common.utils import RateLimitException
 from psa_car_controller.psacc.application.car_controller import PSACarController
-from psa_car_controller.psacc.repository.db import Database
 from psa_car_controller.web.app import app
 
 from psa_car_controller.psacc.model.car import Cars
@@ -128,7 +127,7 @@ def get_charge_control():
 
 @app.route('/positions')
 def get_recorded_position():
-    return FlaskResponse(Database.get_recorded_position(), mimetype='application/json')
+    return jsonify({"error": error})
 
 
 @app.route('/abrp')
@@ -217,5 +216,4 @@ def settings():
 
 @app.route('/battery/soh/<string:vin>')
 def db(vin: str):
-    soh = Database.get_last_soh_by_vin(vin)
-    return jsonify({"soh": soh})
+    return jsonify({"soh": 0})

@@ -20,7 +20,6 @@ from .ecomix import Ecomix
 from psa_car_controller.psa.constants import realm_info, AUTHORIZE_SERVICE
 
 from .abrp import Abrp
-from psa_car_controller.psacc.repository.db import Database
 from psa_car_controller.common.mylogger import CustomLogger
 
 SCOPE = ['openid profile']
@@ -194,9 +193,6 @@ class PSAClient:
         logger.debug("vin:%s longitude:%s latitude:%s date:%s mileage:%s level:%s charge_date:%s level_fuel:"
                      "%s moving:%s", car.vin, longitude, latitude, date, mileage, level, charge_date, level_fuel,
                      moving)
-        Database.record_position(self.weather_api, car.vin, mileage, latitude, longitude, altitude, date, level,
-                                 level_fuel, moving)
-        self.abrp.call(car, Database.get_last_temp(car.vin))
         if car.has_battery():
             electric_energy_status = car.status.get_energy('Electric')
             try:
@@ -213,7 +209,6 @@ class PSAClient:
                 logger.debug(ex)
             try:
                 soh = electric_energy_status.battery.health.resistance
-                Database.record_battery_soh(car.vin, charge_date, soh)
             except IntegrityError:
                 logger.debug("SOH already recorded")
             except AttributeError as ex:

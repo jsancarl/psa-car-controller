@@ -11,7 +11,6 @@ from dash.dcc import Graph
 from psa_car_controller.psacc.application.charging import Charging
 from psa_car_controller.psacc.model.car import Car
 from psa_car_controller.psacc.repository.trips import Trip
-from psa_car_controller.psacc.repository.db import Database
 
 # pylint: disable=invalid-name
 from psa_car_controller.web.tools.utils import card_value_div, dash_date_to_datetime
@@ -202,24 +201,8 @@ def get_figures(car: Car):
 
 
 def get_battery_curve_fig(row: dict, car: Car):
-    start_date = dash_date_to_datetime(row["start_at"])
-    conn = Database.get_db()
-    charge = Database.get_charge(car.vin, start_date)
-    battery_curves = Charging.get_battery_curve(conn, charge, car)
-    battery_curves_dict = list(map(lambda bc: bc.__dict__, battery_curves))
-    fig = px.line(battery_curves_dict, x="level", y="speed")
-    fig.update_layout(xaxis_title="Battery %", yaxis_title="Charging speed in kW")
-    return html.Div(Graph(figure=fig))
+    return html.Div("get_battery_curve_fig")
 
 
 def get_altitude_fig(trip: Trip):
-    conn = Database.get_db()
-    res = list(map(list, conn.execute("SELECT mileage, altitude FROM position WHERE Timestamp>=? and Timestamp<=?;",
-                                      (trip.start_at, trip.end_at)).fetchall()))
-    start_mileage = res[0][0]
-    for line in res:
-        line[0] = line[0] - start_mileage
-    fig = px.line(res, x=0, y=1)
-    fig.update_layout(xaxis_title="Distance km", yaxis_title="Altitude m")
-    conn.close()
-    return html.Div(Graph(figure=fig))
+    return html.Div("get_altitude_fig")
