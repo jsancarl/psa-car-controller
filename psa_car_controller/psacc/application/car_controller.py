@@ -77,6 +77,8 @@ class PSACarController(metaclass=Singleton):
         my_logger(handler_level=int(self.args.debug))
 
         logger.info("App version %s", __version__)
+        for arg, value in sorted(vars(self.args).items()):
+            logger.info("Argument %s: %r", arg, value)
         if self.args.config:
             self.config_name = self.args.config
         if path.isfile(self.config_name):
