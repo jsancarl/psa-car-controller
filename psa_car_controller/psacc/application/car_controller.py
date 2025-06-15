@@ -81,6 +81,8 @@ class PSACarController(metaclass=Singleton):
             logger.info("Argument %s: %r", arg, value)
         if self.args.config:
             self.config_name = self.args.config
+        logger.info("Config file: %s", self.config_name)
+        logger.info("Is config file: %s", path.isfile(self.config_name))
         if path.isfile(self.config_name):
             self.myp = PSAClient.load_config(name=self.config_name)
         elif self.args.web_conf:
