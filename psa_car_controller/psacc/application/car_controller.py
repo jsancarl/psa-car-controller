@@ -103,7 +103,8 @@ class PSACarController(metaclass=Singleton):
                 self.is_good = self.myp.manager.refresh_token_now()
                 if self.is_good:
                     logger.info(str(self.myp.get_vehicles()))
-            except OAuthError:
+            except OAuthError as e:
+                logger.error("OAuthError %s", e)
                 self.is_good = False
                 if self.args.web_conf:
                     logger.error("Please reconnect by going to config web page")
