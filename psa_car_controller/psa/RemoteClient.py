@@ -205,6 +205,8 @@ class RemoteClient:
                                 json={"grant_type": "password", "password": password},
                                 headers=self.headers)
         data = res.json()
+        logger.info("_get_remote_access_token: %s", res)
+        logger.info("_get_remote_access_token: %s", data)
         self.remoteCredentials.access_token = data["access_token"]
         self.remoteCredentials.refresh_token = data["refresh_token"]
         return res
