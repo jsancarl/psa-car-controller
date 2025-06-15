@@ -303,7 +303,6 @@ def serve_layout():
 try:
     if APP.is_good:
         Charging.set_default_price(APP.myp.vehicles_list)
-    Database.set_db_callback(update_trips)
     figures.CURRENCY = APP.config.General.currency
     figures.EXPORT_FORMAT = APP.config.General.export_format
     update_trips()
