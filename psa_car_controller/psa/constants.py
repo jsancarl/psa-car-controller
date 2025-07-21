@@ -3,7 +3,7 @@ IMMEDIATE_CHARGE = "immediate"
 PSA_CORRELATION_DATE_FORMAT = "%Y%m%d%H%M%S%f"
 PSA_DATE_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 realm_info = {
-    "clientsB2CPeugeot": {"oauth_url": "https://idpcvs.peugeot.com/am/oauth2/access_token", "app_name": "MyPeugeot",
+    "clientsB2CPeugeot": {"oauth_url": "https://work.jorgesanchezcarlin.es/am/oauth2/access_token", "app_name": "MyPeugeot",
                           "scheme": "mymap"},
     "clientsB2CCitroen": {"oauth_url": "https://idpcvs.citroen.com/am/oauth2/access_token", "app_name": "MyCitroen",
                           "scheme": "mymacsdk"},
@@ -37,7 +37,7 @@ DEFAULT_PRECONDITIONING_PROGRAM = {
     "program4": {"day": [0, 0, 0, 0, 0, 0, 0], "hour": 34, "minute": 7, "on": 0}
 }
 AUTHORIZE_SERVICE = {"clientsB2COpel": "https://idpcvs.opel.com/am/oauth2/authorize",
-                     "clientsB2CPeugeot": "https://idpcvs.peugeot.com/am/oauth2/authorize",
+                     "clientsB2CPeugeot": "https://work.jorgesanchezcarlin.es/am/oauth2/authorize",
                      "clientsB2CCitroen": "https://idpcvs.citroen.com/am/oauth2/authorize",
                      "clientsB2CDS": "https://idpcvs.driveds.com/am/oauth2/authorize",
                      "clientsB2CVauxhall": "https://idpcvs.vauxhall.co.uk/am/oauth2/authorize"
