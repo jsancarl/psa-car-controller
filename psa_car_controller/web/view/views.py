@@ -1,4 +1,5 @@
 from datetime import datetime
+from threading import Lock
 from typing import List
 from urllib.parse import parse_qs, urlparse
 
@@ -9,6 +10,7 @@ from dash.exceptions import PreventUpdate
 import time
 from flask import request
 
+from psa_car_controller.common import utils
 from psa_car_controller.common.mylogger import CustomLogger
 from psa_car_controller.psacc.application.car_controller import PSACarController
 from psa_car_controller.psacc.model.car import Cars, Car
@@ -163,6 +165,10 @@ def create_callback():  # noqa: MC0001
         CALLBACK_CREATED = True
 
 
+no_concurrent_update_trip = Lock()
+DATA_READY = False
+
+
 def update_trips():
     return
 
@@ -170,6 +176,9 @@ def update_trips():
 def serve_layout():
     global cached_layout
     if cached_layout is None:
+        while not DATA_READY:
+            logger.debug("wait for trips data...")
+            time.sleep(3)
         logger.debug("Create new layout")
         fig_filter = FigureFilter()
         try:
@@ -193,7 +202,7 @@ def serve_layout():
                 fig_filter.add_graph(dcc.Graph(id="consumption_graph_by_temp"), "consumption_by_temp",
                                      ["consumption_km"] * 2, figures.consumption_fig_by_temp)]
             maps = fig_filter.add_map(dcc.Graph(id="trips_map", style={"height": '90vh'}), "lat",
-                                      ["long", "start_at"], figures.trips_map)
+                                      ["long", "start_at_str"], figures.trips_map)
             fig_filter.add_table("trips", figures.table_fig)
             fig_filter.add_table("chargings", figures.battery_table)
             fig_filter.src = {"trips": trips.get_trips_as_dict(), "chargings": chargings}
